@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Votação — Semana Técnica</title>
+  <style>
+    :root { font-family: system-ui, Arial, sans-serif; }
+    body { margin: 0; background: #ffffff; color: #0b0b0b; }
+    .container { max-width: 980px; margin: 32px auto; padding: 0 16px; }
+    .header { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap: wrap;}
+    h1 { font-size: 1.6rem; margin: 0 0 8px; }
+    .sub { color:#555; margin: 0 0 12px; }
+    .grid { display:grid; grid-template-columns: repeat(auto-fit,minmax(260px,1fr)); gap:16px; margin-top:16px; }
+    .card { background:#dcdcdc; border:1px solid #e7e7ee; border-radius:16px; padding:16px; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04); }
+    .titulo { font-weight: 600; margin: 0 0 8px; }
+    .votos { font-size:.95rem; color:#444; margin-bottom:10px; }
+    .btn { cursor:pointer; border:0; border-radius:12px; padding:10px 14px; font-weight:600; background:#2b0ee8; color:#fff; }
+    .btn[disabled] { opacity:.45; cursor:not-allowed; }
+    .pill { background:#ff0000; color:#000000; border-radius:999px; padding:6px 10px; font-weight:600; display:inline-block; }
+    .ranking { display:grid; grid-template-columns:1.6fr 1fr; gap:12px; align-items:start; }
+    .painel { background:#ffffff; border:1px solid #e7e7ee; border-radius:16px; padding:16px; }
+    ol { margin:0; padding-left: 1.2rem; }
+    .top { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+    .medal { font-size:1.1rem; }
+    .rodape { margin-top:20px; font-size:.9rem; color:#666; }
+    .linha { height:1px; background:#eee; margin:12px 0; }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+
+  <script type="module">
+    import { h, render } from "https://esm.sh/preact@10.24.1";
+    import { useEffect, useMemo, useState } from "https://esm.sh/preact@10.24.1/hooks";
+
+    // =================== MUDANÇA AQUI ===================
+    // A API agora aponta para a variável de ambiente na Netlify.
+    // O `||` serve como um fallback para quando você rodar localmente.
+    const API = "<%= VITE_API_URL %>" || "http://localhost:3000";
+    
+    // ATENÇÃO: A linha acima usa uma sintaxe especial da Netlify (`<%= ... %>`)
+    // para injetar a variável de ambiente diretamente no HTML no momento do build.
+    // Para que isso funcione, você precisa dizer para a Netlify processar o HTML.
+    // Crie um arquivo `netlify.toml` na raiz do seu projeto com o seguinte conteúdo:
+    /*
+        [build]
+          command = "echo 'Build com processamento de HTML'"
+        [build.processing]
+          skip_processing = false
+        [build.processing.html]
+          pretty_urls = true
+    */
+    // Se isso parecer complicado, uma alternativa mais simples é hardcoded (não recomendado):
+    // const API = "https://semana-tecnica-api.onrender.com";
+    // =================== FIM DA MUDANÇA ===================
+    const COOLDOWN_SEGUNDOS = 60; // ajuste aqui
+    const LS_ULTIMO_VOTO = "semana_tecnica_ultimo_voto_v1";
+
+    async function apiGetProjects() {
+      const r = await fetch(`${API}/api/projects`);
+      if (!r.ok) throw new Error("Falha ao carregar projetos");
+      return r.json();
+    }
+    async function apiVote(id) {
+      const r = await fetch(`${API}/api/vote`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id })
+      });
+      if (!r.ok) throw new Error("Falha ao votar");
+      return r.json();
+    }
+    async function apiReset() {
+      const r = await fetch(`${API}/api/reset`, { method: "POST" });
+      if (!r.ok) throw new Error("Falha ao resetar");
+      return r.json();
+    }
+
+    function agoraMs() { return Date.now(); }
+
+    function App() {
+      const [projetos, setProjetos] = useState([]);
+      const [carregando, setCarregando] = useState(true);
+      const [restante, setRestante] = useState(0);
+      const [mensagem, setMensagem] = useState("");
+
+      // Carrega projetos do backend
+      useEffect(() => {
+        (async () => {
+          try {
+            setCarregando(true);
+            const list = await apiGetProjects();
+            setProjetos(list);
+          } catch (e) {
+            console.error(e);
+            setMensagem("Não foi possível carregar os projetos.");
+          } finally {
+            setCarregando(false);
+          }
+        })();
+      }, []);
+
+      // Cooldown local
+      useEffect(() => {
+        function calcRestante() {
+          const ultimo = Number(localStorage.getItem(LS_ULTIMO_VOTO) || 0);
+          const passou = (agoraMs() - ultimo) / 1000;
+          const falta = Math.max(0, Math.ceil(COOLDOWN_SEGUNDOS - passou));
+          setRestante(falta);
+        }
+        calcRestante();
+        const id = setInterval(calcRestante, 500);
+        return () => clearInterval(id);
+      }, []);
+
+      const top3 = useMemo(() => {
+        return [...projetos]
+          .sort((a, b) => b.votes - a.votes || a.name.localeCompare(b.name) || a.id - b.id)
+          .slice(0, 3);
+      }, [projetos]);
+
+      async function votar(id) {
+        if (restante > 0) {
+          setMensagem(`Aguarde ${restante}s para votar novamente.`);
+          return;
+        }
+        setMensagem("");
+        try {
+          await apiVote(id);
+          // recarrega lista
+          const list = await apiGetProjects();
+          setProjetos(list);
+          localStorage.setItem(LS_ULTIMO_VOTO, String(agoraMs()));
+        } catch (e) {
+          console.error(e);
+          setMensagem("Não foi possível registrar o voto.");
+        }
+      }
+
+      async function resetar() {
+        if (!confirm("Zerar votos no servidor e cooldown neste navegador?")) return;
+        try {
+          await apiReset();
+          localStorage.removeItem(LS_ULTIMO_VOTO);
+          const list = await apiGetProjects();
+          setProjetos(list);
+          setMensagem("Tudo zerado.");
+        } catch (e) {
+          setMensagem("Falha ao resetar.");
+        }
+      }
+
+      return (
+        h("div", { class: "container" },
+          h("div", { class: "header" },
+            h("div", null,
+              h("h1", null, "Votação — Semana Técnica - Regente Feijó."),
+              h("p", { class: "sub" }, "Vote no melhor trabalho. Sem login. 1 voto por intervalo de cooldown (neste navegador).")
+            ),
+            h("div", null,
+              h("span", { class: "pill", title: "Tempo entre votos" }, `Cooldown: ${COOLDOWN_SEGUNDOS}s`)
+            )
+          ),
+
+          h("div", { class: "ranking" },
+            h("div", { class: "painel" },
+              h("div", { class: "top" },
+                h("h2", { style: "margin:0" }, "Top 3"),
+                h("span", { style: "font-size:.9rem;color:#666;" }, "Atualiza após cada voto")
+              ),
+              h("ol", null,
+                top3.map((p, i) =>
+                  h("li", { key: p.id, style: "margin:8px 0" },
+                    h("div", { class: "top" },
+                      h("div", null,
+                        h("span", { class: "medal" }, i===0?"🥇":i===1?"🥈":"🥉"),
+                        " ",
+                        h("strong", null, p.name)
+                      ),
+                      h("span", null, `${p.votes} voto${p.votes===1?"":"s"}`)
+                    )
+                  )
+                )
+              )
+            ),
+
+            h("div", { class: "painel" },
+              h("h2", { style: "margin:0 0 8px" }, "Seu voto"),
+              restante > 0
+                ? h("p", { style: "margin:0;color:#a30000;font-weight:600" }, `Aguarde ${restante}s para votar novamente.`)
+                : h("p", { style: "margin:0;color:#166534;font-weight:600" }, "Você pode votar agora."),
+              h("div", { class: "linha" }),
+             
+            )
+          ),
+
+          carregando
+            ? h("p", null, "Carregando projetos…")
+            : h("div", { class: "grid" },
+                [...projetos].sort((a,b)=> a.name.localeCompare(b.name)).map(p =>
+                  h("div", { class: "card", key: p.id },
+                    h("h3", { class: "titulo" }, p.name),
+                    h("div", { class: "votos" }, `Votos: ${p.votes}`),
+                    h("button", {
+                      class: "btn",
+                      disabled: restante > 0,
+                      onClick: () => votar(p.id)
+                    }, "Votar neste trabalho")
+                  )
+                )
+              ),
+
+          h("p", { class: "rodape" },
+            "Desenvolvido por: Loreanne, Talita, Dalton, Richardy e Brenda. ",
+            "Auxiliados pelo professor Lucas Martini - Backend."
+          ),
+          mensagem && h("p", { class: "rodape", style: "color:#444;" }, mensagem)
+        )
+      );
+    }
+
+    render(h(App), document.getElementById("app"));
+  </script>
+</body>
+</html>
