@@ -35,9 +35,18 @@
     import { useEffect, useMemo, useState } from "https://esm.sh/preact@10.24.1/hooks";
 
     // =================== MUDANÇA AQUI ===================
-    // A API agora aponta para a variável de ambiente na Netlify.
-    // O `||` serve como um fallback para quando você rodar localmente.
-    const API = "<%= VITE_API_URL %>" || "http://localhost:3000";
+// DEPOIS
+
+// ===== Config =====
+// Verifica se o código está rodando localmente (no seu computador)
+const IS_LOCALHOST = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+
+// Se for local, usa a API local. Se estiver online (na Netlify), usa a API do Render.
+const API = IS_LOCALHOST
+  ? "http://localhost:3000"
+  : "https://semana-tecnica-api.onrender.com"; // <-- CONFIRME SE ESSA É A URL CORRETA DO SEU BACKEND NO RENDER
+
+
     
     // ATENÇÃO: A linha acima usa uma sintaxe especial da Netlify (`<%= ... %>`)
     // para injetar a variável de ambiente diretamente no HTML no momento do build.
