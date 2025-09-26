@@ -165,7 +165,7 @@ const API = IS_LOCALHOST
           h("div", { class: "header" },
             h("div", null,
               h("h1", null, "Votação — Semana Técnica - Regente Feijó."),
-              h("p", { class: "sub" }, "Vote no melhor trabalho. Sem login. 1 voto por intervalo de cooldown (neste navegador).")
+              h("p", { class: "sub" }, "Vote na melhor apresentação da semana técnica do Regente Feijó!")
             ),
             h("div", null,
               h("span", { class: "pill", title: "Tempo entre votos" }, `Cooldown: ${COOLDOWN_SEGUNDOS}s`)
@@ -215,7 +215,7 @@ const API = IS_LOCALHOST
                       class: "btn",
                       disabled: restante > 0,
                       onClick: () => votar(p.id)
-                    }, "Votar neste trabalho")
+                    }, "Votar")
                   )
                 )
               ),
