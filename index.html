@@ -17,7 +17,6 @@
     .votos { font-size:.95rem; color:#444; margin-bottom:10px; }
     .btn { cursor:pointer; border:0; border-radius:12px; padding:10px 14px; font-weight:600; background:#2b0ee8; color:#fff; }
     .btn[disabled] { opacity:.45; cursor:not-allowed; }
-    .pill { background:#ff0000; color:#000000; border-radius:999px; padding:6px 10px; font-weight:600; display:inline-block; }
     .ranking { display:grid; grid-template-columns:1.6fr 1fr; gap:12px; align-items:start; }
     .painel { background:#ffffff; border:1px solid #e7e7ee; border-radius:16px; padding:16px; }
     ol { margin:0; padding-left: 1.2rem; }
@@ -25,76 +24,72 @@
     .medal { font-size:1.1rem; }
     .rodape { margin-top:20px; font-size:.9rem; color:#666; }
     .linha { height:1px; background:#eee; margin:12px 0; }
+    .input-email { width: 100%; box-sizing: border-box; padding: 10px; border-radius: 8px; border: 1px solid #ccc; margin-top: 8px; }
   </style>
 </head>
 <body>
   <div id="app"></div>
 
   <script type="module">
-    import { h, render } from "https://esm.sh/preact@10.24.1";
-    import { useEffect, useMemo, useState } from "https://esm.sh/preact@10.24.1/hooks";
+    // import { h, render } from "https://esm.sh/preact@10.24.1";
+    // import { useEffect, useMemo, useState } from "https://esm.sh/preact@10.24.1/hooks";
+    import { h, render } from "https://cdn.skypack.dev/preact";
+    import { useEffect, useMemo, useState } from "https://cdn.skypack.dev/preact/hooks";
 
-    // =================== MUDANÇA AQUI ===================
-// DEPOIS
+    // ===== Config =====
+    const IS_LOCALHOST = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    const API = IS_LOCALHOST
+      ? "http://localhost:3000"
+      : "https://semana-tecnica-api.onrender.com"; // <-- CONFIRME SE ESSA É A URL CORRETA DO SEU BACKEND
 
-// ===== Config =====
-// Verifica se o código está rodando localmente (no seu computador)
-const IS_LOCALHOST = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-
-// Se for local, usa a API local. Se estiver online (na Netlify), usa a API do Render.
-const API = IS_LOCALHOST
-  ? "http://localhost:3000"
-  : "https://semana-tecnica-api.onrender.com"; // <-- CONFIRME SE ESSA É A URL CORRETA DO SEU BACKEND NO RENDER
-
-
-    
-    // ATENÇÃO: A linha acima usa uma sintaxe especial da Netlify (`<%= ... %>`)
-    // para injetar a variável de ambiente diretamente no HTML no momento do build.
-    // Para que isso funcione, você precisa dizer para a Netlify processar o HTML.
-    // Crie um arquivo `netlify.toml` na raiz do seu projeto com o seguinte conteúdo:
-    /*
-        [build]
-          command = "echo 'Build com processamento de HTML'"
-        [build.processing]
-          skip_processing = false
-        [build.processing.html]
-          pretty_urls = true
-    */
-    // Se isso parecer complicado, uma alternativa mais simples é hardcoded (não recomendado):
-    // const API = "https://semana-tecnica-api.onrender.com";
-    // =================== FIM DA MUDANÇA ===================
-    const COOLDOWN_SEGUNDOS = 60; // ajuste aqui
-    const LS_ULTIMO_VOTO = "semana_tecnica_ultimo_voto_v1";
+    // ===== Funções da API =====
 
     async function apiGetProjects() {
       const r = await fetch(`${API}/api/projects`);
       if (!r.ok) throw new Error("Falha ao carregar projetos");
       return r.json();
     }
-    async function apiVote(id) {
+
+    // ****** ALTERAÇÃO AQUI ******
+    // A função agora aceita 'id' e 'email'
+    async function apiVote(id, email) {
       const r = await fetch(`${API}/api/vote`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id })
+        // Envia ambos os campos no corpo da requisição
+        body: JSON.stringify({ id, email })
       });
-      if (!r.ok) throw new Error("Falha ao votar");
-      return r.json();
+
+      const data = await r.json();
+      // Se a resposta não for OK, o backend envia um erro (ex: e-mail já votou)
+      // Lançamos um erro com essa mensagem para exibi-la na tela
+      if (!r.ok) throw new Error(data.error || "Falha ao votar");
+      
+      return data;
     }
+
     async function apiReset() {
+      // Esta função continua igual, mas lembre-se que ela é desprotegida
       const r = await fetch(`${API}/api/reset`, { method: "POST" });
       if (!r.ok) throw new Error("Falha ao resetar");
       return r.json();
     }
-
-    function agoraMs() { return Date.now(); }
+    
+    // Função para validar o formato do e-mail
+    function isValidEmail(email) {
+      return /^\S+@\S+\.\S+$/.test(email);
+    }
 
     function App() {
       const [projetos, setProjetos] = useState([]);
       const [carregando, setCarregando] = useState(true);
-      const [restante, setRestante] = useState(0);
       const [mensagem, setMensagem] = useState("");
+      
+      // ****** NOVO ESTADO AQUI ******
+      // Estado para armazenar o e-mail digitado pelo usuário
+      const [email, setEmail] = useState("");
 
-      // Carrega projetos do backend
+      // Carrega projetos do backend (sem alterações)
       useEffect(() => {
         (async () => {
           try {
@@ -110,48 +105,42 @@ const API = IS_LOCALHOST
         })();
       }, []);
 
-      // Cooldown local
-      useEffect(() => {
-        function calcRestante() {
-          const ultimo = Number(localStorage.getItem(LS_ULTIMO_VOTO) || 0);
-          const passou = (agoraMs() - ultimo) / 1000;
-          const falta = Math.max(0, Math.ceil(COOLDOWN_SEGUNDOS - passou));
-          setRestante(falta);
-        }
-        calcRestante();
-        const id = setInterval(calcRestante, 500);
-        return () => clearInterval(id);
-      }, []);
-
+      // Lógica de ranking (sem alterações)
       const top3 = useMemo(() => {
         return [...projetos]
           .sort((a, b) => b.votes - a.votes || a.name.localeCompare(b.name) || a.id - b.id)
           .slice(0, 3);
       }, [projetos]);
-
+      
+      // ****** FUNÇÃO DE VOTO MODIFICADA ******
       async function votar(id) {
-        if (restante > 0) {
-          setMensagem(`Aguarde ${restante}s para votar novamente.`);
+        // Valida o e-mail antes de enviar para a API
+        if (!isValidEmail(email)) {
+          setMensagem("Por favor, digite um e-mail válido para votar.");
           return;
         }
         setMensagem("");
+
         try {
-          await apiVote(id);
-          // recarrega lista
+          // Envia o id do projeto e o e-mail para a API
+          await apiVote(id, email);
+          
+          // Recarrega a lista de projetos para atualizar a contagem de votos
           const list = await apiGetProjects();
           setProjetos(list);
-          localStorage.setItem(LS_ULTIMO_VOTO, String(agoraMs()));
+          setMensagem("Voto registrado com sucesso!");
         } catch (e) {
           console.error(e);
-          setMensagem("Não foi possível registrar o voto.");
+          // Exibe a mensagem de erro vinda diretamente do backend
+          setMensagem(`Erro: ${e.message}`);
         }
       }
 
+      // Função de reset (sem alterações na lógica principal)
       async function resetar() {
-        if (!confirm("Zerar votos no servidor e cooldown neste navegador?")) return;
+        if (!confirm("Zerar todos os votos no servidor?")) return;
         try {
           await apiReset();
-          localStorage.removeItem(LS_ULTIMO_VOTO);
           const list = await apiGetProjects();
           setProjetos(list);
           setMensagem("Tudo zerado.");
@@ -160,15 +149,15 @@ const API = IS_LOCALHOST
         }
       }
 
+      // Verifica se o e-mail é válido para habilitar/desabilitar os botões
+      const isEmailValido = isValidEmail(email);
+
       return (
         h("div", { class: "container" },
           h("div", { class: "header" },
             h("div", null,
               h("h1", null, "Votação — Semana Técnica — Regente Feijó."),
               h("p", { class: "sub" }, "Vote na melhor apresentação da semana técnica do Regente Feijó!")
-            ),
-            h("div", null,
-              h("span", { class: "pill", title: "Tempo entre votos" }, `Cooldown: ${COOLDOWN_SEGUNDOS}s`)
             )
           ),
 
@@ -183,8 +172,7 @@ const API = IS_LOCALHOST
                   h("li", { key: p.id, style: "margin:8px 0" },
                     h("div", { class: "top" },
                       h("div", null,
-                        h("span", { class: "medal" }, i===0?"🥇":i===1?"🥈":"🥉"),
-                        " ",
+                        h("span", { class: "medal" }, i===0?"🥇":i===1?"🥈":"🥉"), " ",
                         h("strong", null, p.name)
                       ),
                       h("span", null, `${p.votes} voto${p.votes===1?"":"s"}`)
@@ -194,37 +182,48 @@ const API = IS_LOCALHOST
               )
             ),
 
+            // ****** PAINEL DE VOTO MODIFICADO ******
             h("div", { class: "painel" },
               h("h2", { style: "margin:0 0 8px" }, "Seu voto"),
-              restante > 0
-                ? h("p", { style: "margin:0;color:#a30000;font-weight:600" }, `Aguarde ${restante}s para votar novamente.`)
-                : h("p", { style: "margin:0;color:#166534;font-weight:600" }, "Você pode votar agora."),
+              h("p", { style: "margin:0; font-weight:600" }, "Digite seu e-mail para poder votar:"),
+              // Novo campo de input para o e-mail
+              h("input", {
+                class: "input-email",
+                type: "email",
+                placeholder: "seu.email@exemplo.com",
+                value: email,
+                // Atualiza o estado 'email' a cada letra digitada
+                onInput: (e) => setEmail(e.target.value)
+              }),
               h("div", { class: "linha" }),
-             
+              !isEmailValido && email.length > 0 && h("p", { style: "color:#a30000;font-weight:600; margin:0;" }, "Formato de e-mail inválido."),
+              isEmailValido && h("p", { style: "color:#166534;font-weight:600; margin:0;" }, "E-mail válido. Você pode votar.")
             )
           ),
 
           carregando
             ? h("p", null, "Carregando projetos…")
+            // ****** GRID DE PROJETOS MODIFICADO ******
             : h("div", { class: "grid" },
                 [...projetos].sort((a,b)=> a.name.localeCompare(b.name)).map(p =>
                   h("div", { class: "card", key: p.id },
                     h("h3", { class: "titulo" }, p.name),
                     h("div", { class: "votos" }, `Votos: ${p.votes}`),
+                    // Botão é desabilitado se o e-mail não for válido
                     h("button", {
                       class: "btn",
-                      disabled: restante > 0,
+                      disabled: !isEmailValido,
                       onClick: () => votar(p.id)
-                    }, "Votar")
+                    }, "Votar com este e-mail")
                   )
                 )
               ),
-
+          
           h("p", { class: "rodape" },
-            "Desenvolvido por: Loreanne de Quadros, Talita Souza, Dalton, Richardy e Brenda - 2025 - 3B.            ",
+            "Desenvolvido por: Loreanne de Quadros, Talita Souza, Dalton, Richardy e Brenda - 2025 - 3B. ",
             "Auxiliados pelos professores Lucas Martini - Backend e Henrique de Padua - PDS"
           ),
-          mensagem && h("p", { class: "rodape", style: "color:#444;" }, mensagem)
+          mensagem && h("p", { class: "rodape", style: "color:#444; font-weight: bold;" }, mensagem)
         )
       );
     }
